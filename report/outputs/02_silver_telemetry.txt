@@ -1,0 +1,72 @@
+
+==============================================================================
+Bước 2 · SILVER TELEMETRY: hai schema thành một, cách ly dòng lỗi, cổng chất lượng
+==============================================================================
+  dbt run (staging + silver telemetry): PASS=6 WARN=0 ERROR=0 SKIP=0
+  dbt test (cổng chất lượng của silver_telemetry): PASS=6 WARN=1 ERROR=0 SKIP=0
+  WARN ở test max_gap_ms là ĐÚNG: nó báo cảm biến mất tín hiệu nhưng không dừng pipeline.
+  {'silver.telemetry': {'rows': 6149, 'version': 0}, 'silver.telemetry_rejects': {'rows': 106, 'version': 0}}
+
+> Dòng bị cách ly (quarantine) theo lý do
+drive_id  reject_reason       so_dong
+--------  ------------------  -------
+drive_a   duplicate           20     
+drive_a   speed_missing       30     
+drive_a   speed_out_of_range  3      
+drive_b   duplicate           20     
+drive_b   speed_missing       30     
+drive_b   speed_out_of_range  3      
+
+> Sau khi chuẩn hoá: hai nguồn cùng đơn vị (m/s) và cùng đồng hồ
+drive_id  dong_sach  bat_dau                           toc_do_toi_da_kmh
+--------  ---------  --------------------------------  -----------------
+drive_a   2968       2025-10-07 08:00:00.014000+00:00  71.0             
+drive_b   3181       2025-10-08 14:30:00.009000+00:00  100.0            
+
+CẦN THẤY: mỗi drive 20 dòng trùng, 30 dòng thiếu tốc độ, 3 dòng tốc độ vô lý; tốc độ tối đa hợp lý (dưới 130 km/h); thời điểm bắt đầu của B trùng thời điểm bắt đầu video (đã trừ độ lệch đồng hồ 1,5 giây).
+
+--- Kiểm tra tự động của module 2 (verify --module 2) ---
+
+Module 2 · silver telemetry
+  PASS  quarantine counts match raw CSV (drive_a)                                expected={'duplicate': 20, 'speed_missing': 30, 'speed_out_of_range': 3} got={'duplicate': 20, 'speed_missing': 30, 'speed_out_of_range': 3}
+  PASS  clean + quarantined == received (drive_a)                                2968+53=3021
+  PASS  quarantine counts match raw CSV (drive_b)                                expected={'duplicate': 20, 'speed_missing': 30, 'speed_out_of_range': 3} got={'duplicate': 20, 'speed_missing': 30, 'speed_out_of_range': 3}
+  PASS  clean + quarantined == received (drive_b)                                3181+53=3234
+  PASS  no duplicate (drive, ts) in silver telemetry                             
+  PASS  all speeds in 0..70 m/s                                                  
+  PASS  drive B clock offset removed (first sample within 0.5 s of video start)  2025-10-08 14:30:00.009000+00:00
+
+7/7 checks passed
+{"ok": true}
+
+$ scripts/lab.sh cli sql "select * from silver.silver_telemetry_rejects limit 5"
+drive_id  ts                                reject_reason  speed_mps  _batch_id     _row_no
+--------  --------------------------------  -------------  ---------  ------------  -------
+drive_a   2025-10-07 08:01:40.185000+00:00  duplicate      11.84      17f098d6bbb1  1010   
+drive_a   2025-10-07 08:01:59.416000+00:00  speed_missing             17f098d6bbb1  1202   
+drive_a   2025-10-07 08:02:30.902000+00:00  duplicate      12.559     17f098d6bbb1  1519   
+drive_b   2025-10-08 14:31:31.398000+00:00  speed_missing             844e983d0ded  917    
+drive_b   2025-10-08 14:31:31.999000+00:00  speed_missing             844e983d0ded  923    
+
+$ scripts/lab.sh dbt test --select silver_telemetry ; dòng tốc độ vô lý ; khoảng hở > 1 s
+02:48:33  1 of 6 PASS accepted_values_silver_telemetry_drive_id__drive_a__drive_b ........ [PASS in 0.11s]
+02:48:33  2 of 6 PASS in_range_silver_telemetry_speed_mps__70__0 ......................... [PASS in 0.03s]
+02:48:33  3 of 6 WARN 2 max_gap_ms_silver_telemetry_ts__1000__drive_id ................... [WARN 2 in 0.04s]
+02:48:33  4 of 6 PASS not_null_silver_telemetry_speed_mps ................................ [PASS in 0.04s]
+02:48:33  5 of 6 PASS not_null_silver_telemetry_ts ....................................... [PASS in 0.03s]
+02:48:33  6 of 6 PASS unique_combination_silver_telemetry_drive_id__ts ................... [PASS in 0.04s]
+02:48:33  [WARNING]: in test max_gap_ms_silver_telemetry_ts__1000__drive_id (models/schema.yml)
+02:48:33  [WARNING]: Got 2 results, configured to warn if != 0
+02:48:33  Done. PASS=6 WARN=1 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=7
+drive_id  _row_no  ts                                speed_mps  kmh  
+--------  -------  --------------------------------  ---------  -----
+drive_a   400      2025-10-07 08:00:39.916000+00:00  250.0      900.0
+drive_a   1700     2025-10-07 08:02:48.789000+00:00  250.0      900.0
+drive_a   2500     2025-10-07 08:04:08.212000+00:00  250.0      900.0
+drive_b   400      2025-10-08 14:30:39.913000+00:00  250.0      900.0
+drive_b   1700     2025-10-08 14:32:48.719000+00:00  250.0      900.0
+drive_b   2500     2025-10-08 14:34:08.398000+00:00  250.0      900.0
+drive_id  so_khoang_ho_tren_1s  gap_lon_nhat_ms
+--------  --------------------  ---------------
+drive_a   1                     3073           
+drive_b   1                     3124           

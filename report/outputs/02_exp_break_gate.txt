@@ -1,0 +1,11 @@
+THÍ NGHIỆM 2 · Nới luật làm sạch rồi xem cổng chất lượng
+
+Luật bình thường: tốc độ hợp lệ là 0..70 m/s (max_speed_mps = 70). Nới lên 1000 m/s: các giá trị vô lý lọt vào silver.
+
+dbt test sau khi nới luật: PASS=5 WARN=1 ERROR=1 SKIP=0
+  FAIL: in_range_silver_telemetry_speed_mps__70__0 bắt được 6 dòng
+
+Khôi phục luật gốc: PASS=6 WARN=1 ERROR=0 SKIP=0
+
+bằng chứng đã ghi: /opt/lab/report/evidence/break_gate.json
+{"ok": true}
