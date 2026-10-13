@@ -1,0 +1,23 @@
+
+==============================================================================
+Bước 5 · WAREHOUSE: mart vào Postgres cho dashboard
+==============================================================================
+  dbt run (marts): PASS=7 WARN=0 ERROR=0 SKIP=0
+  {'mart_frame_funnel': 2, 'mart_frame_gallery': 1019, 'mart_speed_coverage': 7, 'mart_split_balance': 3, 'mart_telemetry_quality': 2, 'mart_trip_summary': 26}
+
+CẦN THẤY: 6 mart trong Postgres (schema marts). Tiếp theo: chạy cả DAG trong Airflow (http://localhost:8080) và mở Metabase.
+
+--- Kiểm tra tự động của module 5 (verify --module 5) ---
+
+Module 5 · warehouse
+  PASS  warehouse has the six marts            {'mart_trip_summary': 26, 'mart_telemetry_quality': 2, 'mart_split_balance': 3, 'mart_speed_coverage': 7, 'mart_frame_gallery': 1019, 'mart_frame_funnel': 2}
+  PASS  warehouse gallery rows == gold frames  
+
+2/2 checks passed
+{"ok": true}
+
+# Airflow (CLI tương đương nút trên UI): unpause day09_reset, day09_video_pipeline; trigger reset_1 rồi pipeline_1
+day09_video_pipeline pipeline_1 -> success
+took=403s
+
+[exited with code 0]

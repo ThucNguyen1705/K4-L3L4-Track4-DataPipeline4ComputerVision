@@ -1,0 +1,50 @@
+$ grep kết quả attempt 2 của silver_frames[14]
+[2026-10-13T03:23:01.827+0000] {subprocess.py:106} INFO - {"trip": "trip-04871", "frames": 60}
+
+$ scripts/lab.sh verify
+
+Module 1 · bronze
+  PASS  bronze raw_telemetry rows == CSV rows (drive_a)                          csv=3021
+  PASS  bronze raw_telemetry rows == CSV rows (drive_b)                          csv=3234
+  PASS  bronze keeps each video once (sha256 unique)                             2 rows
+  PASS  bronze video sha256 matches the original file                            
+  PASS  bronze trips == 26                                                       
+
+Module 2 · silver telemetry
+  PASS  quarantine counts match raw CSV (drive_a)                                expected={'duplicate': 20, 'speed_missing': 30, 'speed_out_of_range': 3} got={'duplicate': 20, 'speed_missing': 30, 'speed_out_of_range': 3}
+  PASS  clean + quarantined == received (drive_a)                                2968+53=3021
+  PASS  quarantine counts match raw CSV (drive_b)                                expected={'duplicate': 20, 'speed_missing': 30, 'speed_out_of_range': 3} got={'duplicate': 20, 'speed_missing': 30, 'speed_out_of_range': 3}
+  PASS  clean + quarantined == received (drive_b)                                3181+53=3234
+  PASS  no duplicate (drive, ts) in silver telemetry                             
+  PASS  all speeds in 0..70 m/s                                                  
+  PASS  drive B clock offset removed (first sample within 0.5 s of video start)  2025-10-08 14:30:00.009000+00:00
+
+Module 3 · silver frames
+  PASS  frame_id unique                                                          1246 frames
+  PASS  black frames detected (drive_a)                                          6/6
+  PASS  black frames detected (drive_b)                                          4/4
+  PASS  blurry frames detected (drive_a)                                         8/8
+  PASS  frozen camera = near-duplicate frames (drive_a)                          11/12
+  PASS  low-light frames flagged but not black (drive_b)                         10/10
+
+Module 4 · gold dataset
+  PASS  gold has frames in every split                                           1019 frames
+  PASS  no trip is in two splits (no leakage)                                    26 trips
+  PASS  every drive appears in train, val and test                               
+  PASS  gold contains no black / blurry / near-duplicate / out-of-sync frame     
+  PASS  one dataset_version, manifest.json agrees with the table                 version a7e44e5cd467
+  PASS  manifest lists upstream table versions (lineage)                         
+  PASS  every manifest image exists under the dataset version folder             
+
+Module 5 · warehouse
+  PASS  warehouse has the six marts                                              {'mart_trip_summary': 26, 'mart_telemetry_quality': 2, 'mart_split_balance': 3, 'mart_speed_coverage': 7, 'mart_frame_gallery': 1019, 'mart_frame_funnel': 2}
+  PASS  warehouse gallery rows == gold frames                                    
+
+27/27 checks passed
+{"ok": true}
+
+$ kiểm tra không nhân đôi
+silver_frames  frame_id_khac_nhau  khung_trip_04871  gold_frames  so_version  dataset_version
+-------------  ------------------  ----------------  -----------  ----------  ---------------
+1246           1246                60                1019         1           a7e44e5cd467   
+[{"version": 25, "operation": "WRITE", "rows_added": 60, "predicate": "trip_id = 'trip-04871'"}, {"version": 24, "operation": "WRITE", "rows_added": 41, "predicate": "trip_id = 'trip-09608'"}, {"version": 23, "operation": "WRITE", "rows_added": 37, "predicate": "trip_id = 'trip-09209'"}, {"version": 22, "operation": "WRITE", "rows_added": 60, "predicate": "trip_id = 'trip-08888'"}, {"version": 21, "operation": "WRITE", "rows_added": 60, "predicate": "trip_id = 'trip-08448'"}, {"version": 20, "operation": "WRITE", "rows_added": 30, "predicate": "trip_id = 'trip-07900'"}, {"version": 19, "operation": "WRITE", "rows_added": 34, "predicate": "trip_id = 'trip-07774'"}, {"version": 18, "operation": "WRITE", "rows_added": 34, "predicate": "trip_id = 'trip-07304'"}]

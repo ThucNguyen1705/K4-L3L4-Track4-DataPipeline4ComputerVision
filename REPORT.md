@@ -7,9 +7,11 @@
 | Họ và tên | Nguyễn Đăng Thực |
 | MSSV (đúng bằng `LAB_STUDENT_ID` trong `.env`) | `2A202603014` |
 | GitHub | `ThucNguyen1705` |
-| Trip dùng cho bài tập sập và chạy lại (xem GUIDE, bước 5) | `<điền: trip-xxxxx>` |
+| Trip dùng cho bài tập sập và chạy lại (xem GUIDE, bước 5) | `trip-04871` |
 
 ## Kết quả cuối
+
+> Cách tính trip: lệnh trong GUIDE `int(MSSV) % 26` báo lỗi vì MSSV `2A202603014` có chữ `A`, nên tôi giữ toàn bộ chữ số: `int("2202603014") % 26 = 14` → `list-trips[14]` = **`trip-04871`** (cũng là `map_index=14` của `silver_frames` trong DAG).
 
 - `dataset_version` của bạn: `a7e44e5cd467`  (phải khớp `report/evidence/run_summary.json`)
 - Số khung hình train / val / test của bạn: **736 / 144 / 139** (tổng 1019; số trip 18 / 4 / 4)
@@ -115,21 +117,41 @@ Ba tháng sau, để tái tạo đúng dataset này cần: (1) hai file video kh
 ### Câu 9
 Mô tả chính xác điều xảy ra khi trip của bạn sập rồi chạy lại: bao nhiêu task chuyển đỏ, bao nhiêu task `upstream_failed`, bạn clear gì, dữ liệu có nhân đôi không, `dataset_version` có đổi không? Bằng chứng (ảnh, số) là gì?
 
-(trả lời ở đây)
+Đặt `LAB_FAIL_ONCE=trip-04871` trong `.env`, `docker compose --profile orchestrate up -d`, trigger `day09_reset` (xanh) rồi `day09_video_pipeline` (run `pipeline_crash`). Kết quả:
+- **1 task đỏ**: `silver_frames` `map_index=14`, log có `RuntimeError: simulated crash while extracting trip-04871; run it again` (`report/screenshots/fail_task_log.png`, `airflow_fail_graph.png`). Lỗi xảy ra **trước khi ghi** Delta, nên bảng không bị ghi dở.
+- **25 task `silver_frames` khác vẫn xanh** (mapped task độc lập, `airflow_fail_mapped_tasks.png`); **7 task `upstream_failed`**: `dbt_run_silver, dbt_test_silver, dbt_run_gold, dbt_test_gold, publish_lake, export_dataset, publish_warehouse`. Dữ liệu dở dang không đi tới gold.
+- Tôi chỉ **Clear task đỏ** trong UI (hộp thoại *Clear and Retry*, Map Index 14, mặc định Downstream + Recursive): **Affected Tasks: 8** = `silver_frames[14]` + 7 task phía sau vốn chưa chạy (`airflow_clear_failed_task.png`). Chỉ **1** task trích frame chạy lại (`attempt=2.log`, in `{"trip": "trip-04871", "frames": 60}`); 25 trip còn lại và 3 task bronze **không** chạy lại (chỉ có `attempt=1`). DAG chuyển xanh (`airflow_retry_graph.png`, `airflow_retry_mapped_tasks.png`).
+- **Không nhân đôi**: `silver.frames` 1246 dòng = 1246 `frame_id` khác nhau, trip-04871 có đúng 60 khung, gold 1019 khung, 1 version duy nhất. `scripts/lab.sh verify` → **27/27** (`report/verify.txt`), `dataset_version` **vẫn là `a7e44e5cd467`**, giống trước khi mô phỏng lỗi. Lý do: task trích frame ghi Delta `overwrite` theo `trip_id` (Câu 4), nên chạy lại một partition thì thay đúng partition đó. Xong bài tập, tôi đã xoá `LAB_FAIL_ONCE` khỏi `.env` và áp dụng lại Compose.
 
 ### Câu 10
 Nâng từ 2 drive lên **500 xe mỗi ngày**: ba thành phần nào của pipeline này sẽ vỡ đầu tiên, và bạn thay bằng gì (nối với slide 12, 22, 23)?
 
-(trả lời ở đây)
+Với 500 xe/ngày (thay vì 2 drive × 5 phút), ba chỗ vỡ đầu tiên:
+1. **Trích frame trong một container Airflow (LocalExecutor, `PARALLELISM=2`, `max_active_tis_per_dagrun=1`)**: ở đây 26 trip mất ~3–6 phút (bước 3: 142 s), tức khoảng 5–10 s cho mỗi trip 30 s video. 500 xe × vài giờ video là hàng chục nghìn trip/ngày, không xong trong ngày. Decode video là nút cổ chai (slide 22–23). Cần thay bằng worker phân tán (Celery/KubernetesExecutor hoặc Spark/Ray), decode bằng GPU (NVDEC), và trích frame ngay khi file tới (event-driven, kiểu Kafka/queue) thay vì một DAG batch.
+2. **DuckDB một file + dbt chạy trên một máy** (`work/lakehouse.duckdb`), mỗi lần `publish_lake` lại `overwrite` toàn bộ bảng silver/gold: dữ liệu tăng tuyến tính thì RAM/IO một máy và việc ghi đè toàn bảng không theo kịp. Cần engine phân tán đọc Delta trực tiếp (Spark/Trino/Databricks), model dbt **incremental** theo partition ngày/xe, và `MERGE` thay vì overwrite toàn bảng (slide 12, 22).
+3. **Lưu trữ và chép ảnh**: một MinIO một node, mỗi khung là một JPG nhỏ, và mỗi `dataset_version` **chép lại** toàn bộ ảnh (`copy_object` từng ảnh). Hàng tỉ object nhỏ sẽ làm chậm list/copy và tốn dung lượng gấp nhiều lần. Cần object storage phân tán (S3), đóng gói frame thành shard (WebDataset/TFRecord/Parquet), và để manifest **trỏ** tới ảnh bất biến thay vì chép. Ngoài ra Postgres/Metabase cũng nên chuyển sang warehouse cột (BigQuery/ClickHouse) cho mart.
 
 ## Câu hỏi riêng của bạn trên Metabase
 
 Câu SQL bạn thêm vào dashboard và điều nó cho biết:
 
-(trả lời ở đây)
+Câu SQL tôi thêm vào dashboard (card *"Tỷ lệ khung bị loại theo trip (câu hỏi riêng)"*), chạy trên warehouse Postgres:
+
+```sql
+select trip_id, drive_id, split, frames, frames_kept,
+       round(100.0 * (frames - frames_kept) / frames, 1) as pct_bi_loai
+from marts.mart_trip_summary
+order by pct_bi_loai desc, trip_id;
+```
+
+Kết quả (8 dòng đầu): `trip-04622` (drive_a, train) bị loại **56.7%** (26/60 khung giữ lại), `trip-03904` 50.0%, `trip-02086` 46.7%, `trip-08888` 40.0%, `trip-07774` (test) 38.2%, `trip-06570` 28.9%, `trip-04871` 28.3%, `trip-08448` 25.0%. Năm trip loại nhiều nhất đều ở **drive A**. Nguyên nhân chính là khung trùng: trip-04622 có camera đứng hình 6 s (`drive_a-02406…02466`) cộng đoạn đường cao tốc ít chi tiết; trip-08888 xe đi 6.5 km/h; trip-02086 17.6 km/h. trip-06570 bị loại vì 9 khung mờ. Gộp theo split: train bị loại 20.6% (927 → 736), val 8.9%, test 13.7%. Như vậy bước làm sạch lấy đi nhiều khung của train hơn và của các trip chạy chậm. Nếu muốn dataset cân bằng theo cảnh, nên theo dõi chỉ số này mỗi lần chạy, và nên lấy mẫu theo quãng đường thay vì theo thời gian (xem Câu 5).
 
 ## Nhìn lại
 
 Điều bạn thấy bất ngờ nhất, điều gì còn chưa rõ, và một lỗi dữ liệu mà bạn nghĩ pipeline **chưa** bắt được (nếu có). Tối đa 8 dòng.
 
-(trả lời ở đây)
+- **Bất ngờ nhất**: Git trên Windows (`core.autocrlf=true`) đổi file sang CRLF, làm `airflow-entrypoint.sh` hỏng (`exec ... no such file or directory`) và làm sai hash của các file được bảo vệ. Phải đặt `core.autocrlf=false` cho repo rồi đưa file về LF. Ngoài ra, MSSV có chữ nên công thức `int(MSSV) % 26` của GUIDE không chạy (tôi giữ phần chữ số, xem đầu báo cáo).
+- **Bất ngờ về dữ liệu**: khung đầu tiên của mỗi drive (`drive_a-00000`, `drive_b-00000`) bị `sync_lost` dù telemetry chỉ đến sau 14 ms, vì ASOF join chỉ tìm dòng **trước** khung. Chọn dòng gần nhất cả hai phía sẽ giữ được khung này.
+- **Chưa rõ**: vì sao trip-04622 chạy 65 km/h mà vẫn có 34/60 khung "gần trùng". Với dHash 9×8, đoạn cao tốc nhiều trời và mặt đường có thể trông giống nhau dù xe đang chạy thật.
+- **Lỗi pipeline chưa bắt**: `is_near_dup` so với khung **liền trước** chứ không so với khung **được giữ gần nhất**, nên khi cảnh trôi chậm, cả chuỗi bị loại dần dần. Pipeline cũng không kiểm tra telemetry nhảy vọt nhưng vẫn trong 0..70 m/s (ví dụ GPS nhảy vài trăm mét, tốc độ đổi 30 m/s trong 0,1 s). Luật "đen" chỉ dựa vào độ sáng < 12, nên một cảnh đêm thật cũng sẽ bị loại.
+- Lượt chạy cuối của tôi dùng `run_summary.json` từ `step all --reset` (27/27, `a7e44e5cd467`); `report/verify.txt` lưu sau bài tập sập/chạy lại.
