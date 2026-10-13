@@ -1,0 +1,79 @@
+đã xoá 2343 đối tượng trong lake
+
+==============================================================================
+Bước 1 · BRONZE: ghi nguyên bản, chỉ thêm, chạy lại không đổi gì
+==============================================================================
+  {'drive': 'drive_a', 'video': 'ingested', 'telemetry_rows': 3021}
+  {'drive': 'drive_b', 'video': 'ingested', 'telemetry_rows': 3234}
+  {'trips': 26}
+  (chạy lại ngay một lần nữa, mọi thứ phải báo 'already present'):
+  {'drive': 'drive_a', 'video': 'already present', 'telemetry_rows': 'already present'}
+
+> Số dòng của từng bảng bronze
+bang             so_dong
+---------------  -------
+raw_telemetry_a  3021   
+raw_telemetry_b  3234   
+trips_raw        26     
+video_files      2      
+
+> Hai nguồn telemetry khác nhau thế nào (3 dòng đầu mỗi bảng, cột thô)
+ts_utc                    speed_mps  heading_deg  lat        lon        alt_m  acc_x  acc_y  gas    brake  steer   drive_id  _source_file     _batch_id     _row_no  _ingested_at                    
+------------------------  ---------  -----------  ---------  ---------  -----  -----  -----  -----  -----  ------  --------  ---------------  ------------  -------  --------------------------------
+2025-10-07T08:00:00.014Z  1.213      292.3385     48.582375  13.396210  48.6   0.360  0.380  0.028  0.000  -0.553  drive_a   telemetry_a.csv  17f098d6bbb1  0        2026-10-13 02:43:57.269348+00:00
+2025-10-07T08:00:00.091Z  1.224      293.8495     48.582375  13.396208  48.6   0.390  0.500  0.047  0.000  -0.553  drive_a   telemetry_a.csv  17f098d6bbb1  1        2026-10-13 02:43:57.269348+00:00
+timestamp_ms   spd_kmh  hdg      latitude   longitude  altitude  ax     ay      throttle_pct  brake_pct  steering  drive_id  _source_file     _batch_id     _row_no  _ingested_at                    
+-------------  -------  -------  ---------  ---------  --------  -----  ------  ------------  ---------  --------  --------  ---------------  ------------  -------  --------------------------------
+1759933801509  55.11    80.6009  48.577030  13.454629  48.6      0.140  -0.420  2.0           0.0        -0.009    drive_b   telemetry_b.csv  844e983d0ded  0        2026-10-13 02:43:59.951974+00:00
+1759933801590  54.95    79.4354  48.577034  13.454650  48.6      0.220  -0.490  2.0           0.0        -0.009    drive_b   telemetry_b.csv  844e983d0ded  1        2026-10-13 02:43:59.951974+00:00
+
+CẦN THẤY: 3021 dòng (A) và 3234 dòng (B); B dùng tên cột, đơn vị và timestamp khác A; chạy lại không thêm dòng nào.
+
+--- Kiểm tra tự động của module 1 (verify --module 1) ---
+
+Module 1 · bronze
+  PASS  bronze raw_telemetry rows == CSV rows (drive_a)  csv=3021
+  PASS  bronze raw_telemetry rows == CSV rows (drive_b)  csv=3234
+  PASS  bronze keeps each video once (sha256 unique)     2 rows
+  PASS  bronze video sha256 matches the original file    
+  PASS  bronze trips == 26                               
+
+5/5 checks passed
+{"ok": true}
+
+$ scripts/lab.sh cli history bronze.raw_telemetry_a / bronze.video_files, sql video_files, kiểu cột
+[{"version": 0, "operation": "WRITE", "rows_added": 3021, "predicate": null}]
+[{"version": 1, "operation": "WRITE", "rows_added": 1, "predicate": null}, {"version": 0, "operation": "WRITE", "rows_added": 1, "predicate": null}]
+drive_id  telemetry_clock_offset_ms  sha256                                    video_start_utc            codec  width  height  fps   duration_s
+--------  -------------------------  ----------------------------------------  -------------------------  -----  -----  ------  ----  ----------
+drive_b   1500                       bfa62703f645ff77a8578ae3fc74a00881140d38  2025-10-08T14:30:00+00:00  h264   640    360     10.0  321.4     
+drive_a   0                          636ba1a98dfc5ba665d1c935e1d2064e69f4df36  2025-10-07T08:00:00+00:00  h264   640    360     10.0  300.1     
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/opt/lab/pipeline/cli.py", line 65, in <module>
+    rc = main()
+         ^^^^^^
+  File "/opt/lab/pipeline/cli.py", line 52, in main
+    print(explore.sql(a.query, a.limit), flush=True); return 0
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/lab/pipeline/explore.py", line 24, in sql
+    cur = con.execute(query)
+          ^^^^^^^^^^^^^^^^^^
+_duckdb.BinderException: Binder Error: Referenced column "data_type" not found in FROM clause!
+Candidate bindings: "column_type", "default"
+
+LINE 1: select column_name, data_type from (describe lake.bronze_raw_telemetry_b)
+                            ^
+spd_trong  tong
+---------  ----
+30         3234
+string_agg(((column_name || ':') || column_type), ', ')
+-------------------------------------------------------
+timestamp_ms:VARCHAR, spd_kmh:VARCHAR, h               
+string_agg(((column_name || ':') || column_type), ', ')
+-------------------------------------------------------
+ts_utc:VARCHAR, speed_mps:VARCHAR, headi               
+speed_trong  tong
+-----------  ----
+30           3021

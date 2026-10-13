@@ -1,0 +1,216 @@
+đã xoá 0 đối tượng trong lake
+
+==============================================================================
+Bước 1 · BRONZE: ghi nguyên bản, chỉ thêm, chạy lại không đổi gì
+==============================================================================
+  {'drive': 'drive_a', 'video': 'ingested', 'telemetry_rows': 3021}
+  {'drive': 'drive_b', 'video': 'ingested', 'telemetry_rows': 3234}
+  {'trips': 26}
+  (chạy lại ngay một lần nữa, mọi thứ phải báo 'already present'):
+  {'drive': 'drive_a', 'video': 'already present', 'telemetry_rows': 'already present'}
+
+> Số dòng của từng bảng bronze
+bang             so_dong
+---------------  -------
+raw_telemetry_a  3021   
+raw_telemetry_b  3234   
+trips_raw        26     
+video_files      2      
+
+> Hai nguồn telemetry khác nhau thế nào (3 dòng đầu mỗi bảng, cột thô)
+ts_utc                    speed_mps  heading_deg  lat        lon        alt_m  acc_x  acc_y  gas    brake  steer   drive_id  _source_file     _batch_id     _row_no  _ingested_at                    
+------------------------  ---------  -----------  ---------  ---------  -----  -----  -----  -----  -----  ------  --------  ---------------  ------------  -------  --------------------------------
+2025-10-07T08:00:00.014Z  1.213      292.3385     48.582375  13.396210  48.6   0.360  0.380  0.028  0.000  -0.553  drive_a   telemetry_a.csv  17f098d6bbb1  0        2026-10-13 02:32:48.728118+00:00
+2025-10-07T08:00:00.091Z  1.224      293.8495     48.582375  13.396208  48.6   0.390  0.500  0.047  0.000  -0.553  drive_a   telemetry_a.csv  17f098d6bbb1  1        2026-10-13 02:32:48.728118+00:00
+timestamp_ms   spd_kmh  hdg      latitude   longitude  altitude  ax     ay      throttle_pct  brake_pct  steering  drive_id  _source_file     _batch_id     _row_no  _ingested_at                    
+-------------  -------  -------  ---------  ---------  --------  -----  ------  ------------  ---------  --------  --------  ---------------  ------------  -------  --------------------------------
+1759933801509  55.11    80.6009  48.577030  13.454629  48.6      0.140  -0.420  2.0           0.0        -0.009    drive_b   telemetry_b.csv  844e983d0ded  0        2026-10-13 02:32:54.472288+00:00
+1759933801590  54.95    79.4354  48.577034  13.454650  48.6      0.220  -0.490  2.0           0.0        -0.009    drive_b   telemetry_b.csv  844e983d0ded  1        2026-10-13 02:32:54.472288+00:00
+
+CẦN THẤY: 3021 dòng (A) và 3234 dòng (B); B dùng tên cột, đơn vị và timestamp khác A; chạy lại không thêm dòng nào.
+
+--- Kiểm tra tự động của module 1 (verify --module 1) ---
+
+Module 1 · bronze
+  PASS  bronze raw_telemetry rows == CSV rows (drive_a)  csv=3021
+  PASS  bronze raw_telemetry rows == CSV rows (drive_b)  csv=3234
+  PASS  bronze keeps each video once (sha256 unique)     2 rows
+  PASS  bronze video sha256 matches the original file    
+  PASS  bronze trips == 26                               
+
+5/5 checks passed
+
+==============================================================================
+Bước 2 · SILVER TELEMETRY: hai schema thành một, cách ly dòng lỗi, cổng chất lượng
+==============================================================================
+  dbt run (staging + silver telemetry): PASS=6 WARN=0 ERROR=0 SKIP=0
+  dbt test (cổng chất lượng của silver_telemetry): PASS=6 WARN=1 ERROR=0 SKIP=0
+  WARN ở test max_gap_ms là ĐÚNG: nó báo cảm biến mất tín hiệu nhưng không dừng pipeline.
+  {'silver.telemetry': {'rows': 6149, 'version': 0}, 'silver.telemetry_rejects': {'rows': 106, 'version': 0}}
+
+> Dòng bị cách ly (quarantine) theo lý do
+drive_id  reject_reason       so_dong
+--------  ------------------  -------
+drive_a   duplicate           20     
+drive_a   speed_missing       30     
+drive_a   speed_out_of_range  3      
+drive_b   duplicate           20     
+drive_b   speed_missing       30     
+drive_b   speed_out_of_range  3      
+
+> Sau khi chuẩn hoá: hai nguồn cùng đơn vị (m/s) và cùng đồng hồ
+drive_id  dong_sach  bat_dau                           toc_do_toi_da_kmh
+--------  ---------  --------------------------------  -----------------
+drive_a   2968       2025-10-07 08:00:00.014000+00:00  71.0             
+drive_b   3181       2025-10-08 14:30:00.009000+00:00  100.0            
+
+CẦN THẤY: mỗi drive 20 dòng trùng, 30 dòng thiếu tốc độ, 3 dòng tốc độ vô lý; tốc độ tối đa hợp lý (dưới 130 km/h); thời điểm bắt đầu của B trùng thời điểm bắt đầu video (đã trừ độ lệch đồng hồ 1,5 giây).
+
+--- Kiểm tra tự động của module 2 (verify --module 2) ---
+
+Module 2 · silver telemetry
+  PASS  quarantine counts match raw CSV (drive_a)                                expected={'duplicate': 20, 'speed_missing': 30, 'speed_out_of_range': 3} got={'duplicate': 20, 'speed_missing': 30, 'speed_out_of_range': 3}
+  PASS  clean + quarantined == received (drive_a)                                2968+53=3021
+  PASS  quarantine counts match raw CSV (drive_b)                                expected={'duplicate': 20, 'speed_missing': 30, 'speed_out_of_range': 3} got={'duplicate': 20, 'speed_missing': 30, 'speed_out_of_range': 3}
+  PASS  clean + quarantined == received (drive_b)                                3181+53=3234
+  PASS  no duplicate (drive, ts) in silver telemetry                             
+  PASS  all speeds in 0..70 m/s                                                  
+  PASS  drive B clock offset removed (first sample within 0.5 s of video start)  2025-10-08 14:30:00.009000+00:00
+
+7/7 checks passed
+
+==============================================================================
+Bước 3 · SILVER FRAMES: video thành khung hình, cờ chất lượng, join theo event time
+==============================================================================
+  đã xử lý 26 trip, tổng 1246 khung hình (mỗi trip một partition)
+  dbt run (trips + cờ + join): PASS=4 WARN=0 ERROR=0 SKIP=0
+  dbt test: PASS=8 WARN=0 ERROR=0 SKIP=0
+  {'silver.trips': {'rows': 26, 'version': 0}, 'silver.frames_flagged': {'rows': 1246, 'version': 0}, 'silver.frame_telemetry': {'rows': 1246, 'version': 0}}
+
+> Khung hình đi đâu (một khung có thể bị nhiều cờ)
+drive_id  tong  den  mo  toi_giu_lai  trung  mat_dong_bo
+--------  ----  ---  --  -----------  -----  -----------
+drive_a   602   6    9   4            149    7          
+drive_b   644   4    0   61           53     7          
+
+> Độ trễ đồng bộ giữa khung hình và telemetry (ms)
+drive_id  tb_ms  toi_da_ms
+--------  -----  ---------
+drive_a   66.0   2884     
+drive_b   73.0   3112     
+
+CẦN THẤY: drive A có 6 khung đen, drive B có 4; 'tối_giữ_lại' của B lớn (đường hầm, bóng râm): tối KHÔNG phải đen và không bị bỏ; khung trùng nhiều (xe chạy chậm, camera đứng hình 6 giây ở A); độ trễ đồng bộ trung bình nhỏ.
+
+--- Kiểm tra tự động của module 3 (verify --module 3) ---
+
+Module 3 · silver frames
+  PASS  frame_id unique                                   1246 frames
+  PASS  black frames detected (drive_a)                   6/6
+  PASS  black frames detected (drive_b)                   4/4
+  PASS  blurry frames detected (drive_a)                  8/8
+  PASS  frozen camera = near-duplicate frames (drive_a)   11/12
+  PASS  low-light frames flagged but not black (drive_b)  10/10
+
+6/6 checks passed
+
+==============================================================================
+Bước 4 · GOLD: dataset huấn luyện, chia theo trip, có phiên bản
+==============================================================================
+  dbt run (gold): PASS=2 WARN=0 ERROR=0 SKIP=0
+  dbt test (gồm test chống rò rỉ split): PASS=7 WARN=0 ERROR=0 SKIP=0
+  {"dataset_version": "a7e44e5cd467", "frames": 1019, "by_split": {"val": 144, "test": 139, "train": 736}, "trips_by_split": {"test": 4, "val": 4, "train": 18}}
+
+> Mỗi split có bao nhiêu khung hình và trip, ở từng drive
+drive_id  split  khung_hinh  trip  toc_do_tb_kmh
+--------  -----  ----------  ----  -------------
+drive_a   train  318         9     48.0         
+drive_a   val    70          2     21.0         
+drive_a   test   48          2     14.0         
+drive_b   train  418         9     72.0         
+drive_b   val    74          2     77.0         
+drive_b   test   91          2     59.0         
+
+MSSV dùng để chia split: 2A202603014
+CẦN THẤY: mỗi drive có đủ train, val, test; một trip chỉ nằm trong MỘT split; dataset_version là chuỗi 12 ký tự (đổi MSSV thì đổi version).
+
+--- Kiểm tra tự động của module 4 (verify --module 4) ---
+
+Module 4 · gold dataset
+  PASS  gold has frames in every split                                        1019 frames
+  PASS  no trip is in two splits (no leakage)                                 26 trips
+  PASS  every drive appears in train, val and test                            
+  PASS  gold contains no black / blurry / near-duplicate / out-of-sync frame  
+  PASS  one dataset_version, manifest.json agrees with the table              version a7e44e5cd467
+  PASS  manifest lists upstream table versions (lineage)                      
+  PASS  every manifest image exists under the dataset version folder          
+
+7/7 checks passed
+
+==============================================================================
+Bước 5 · WAREHOUSE: mart vào Postgres cho dashboard
+==============================================================================
+  dbt run (marts): PASS=7 WARN=0 ERROR=0 SKIP=0
+  {'mart_frame_funnel': 2, 'mart_frame_gallery': 1019, 'mart_speed_coverage': 7, 'mart_split_balance': 3, 'mart_telemetry_quality': 2, 'mart_trip_summary': 26}
+
+CẦN THẤY: 6 mart trong Postgres (schema marts). Tiếp theo: chạy cả DAG trong Airflow (http://localhost:8080) và mở Metabase.
+
+--- Kiểm tra tự động của module 5 (verify --module 5) ---
+
+Module 5 · warehouse
+  PASS  warehouse has the six marts            {'mart_trip_summary': 26, 'mart_telemetry_quality': 2, 'mart_split_balance': 3, 'mart_speed_coverage': 7, 'mart_frame_gallery': 1019, 'mart_frame_funnel': 2}
+  PASS  warehouse gallery rows == gold frames  
+
+2/2 checks passed
+
+==============================================================================
+TỔNG KẾT
+==============================================================================
+  Bước 1: ĐẠT
+  Bước 2: ĐẠT
+  Bước 3: ĐẠT
+  Bước 4: ĐẠT
+  Bước 5: ĐẠT
+
+--- Kiểm tra toàn bộ ---
+
+Module 1 · bronze
+  PASS  bronze raw_telemetry rows == CSV rows (drive_a)                          csv=3021
+  PASS  bronze raw_telemetry rows == CSV rows (drive_b)                          csv=3234
+  PASS  bronze keeps each video once (sha256 unique)                             2 rows
+  PASS  bronze video sha256 matches the original file                            
+  PASS  bronze trips == 26                                                       
+
+Module 2 · silver telemetry
+  PASS  quarantine counts match raw CSV (drive_a)                                expected={'duplicate': 20, 'speed_missing': 30, 'speed_out_of_range': 3} got={'duplicate': 20, 'speed_missing': 30, 'speed_out_of_range': 3}
+  PASS  clean + quarantined == received (drive_a)                                2968+53=3021
+  PASS  quarantine counts match raw CSV (drive_b)                                expected={'duplicate': 20, 'speed_missing': 30, 'speed_out_of_range': 3} got={'duplicate': 20, 'speed_missing': 30, 'speed_out_of_range': 3}
+  PASS  clean + quarantined == received (drive_b)                                3181+53=3234
+  PASS  no duplicate (drive, ts) in silver telemetry                             
+  PASS  all speeds in 0..70 m/s                                                  
+  PASS  drive B clock offset removed (first sample within 0.5 s of video start)  2025-10-08 14:30:00.009000+00:00
+
+Module 3 · silver frames
+  PASS  frame_id unique                                                          1246 frames
+  PASS  black frames detected (drive_a)                                          6/6
+  PASS  black frames detected (drive_b)                                          4/4
+  PASS  blurry frames detected (drive_a)                                         8/8
+  PASS  frozen camera = near-duplicate frames (drive_a)                          11/12
+  PASS  low-light frames flagged but not black (drive_b)                         10/10
+
+Module 4 · gold dataset
+  PASS  gold has frames in every split                                           1019 frames
+  PASS  no trip is in two splits (no leakage)                                    26 trips
+  PASS  every drive appears in train, val and test                               
+  PASS  gold contains no black / blurry / near-duplicate / out-of-sync frame     
+  PASS  one dataset_version, manifest.json agrees with the table                 version a7e44e5cd467
+  PASS  manifest lists upstream table versions (lineage)                         
+  PASS  every manifest image exists under the dataset version folder             
+
+Module 5 · warehouse
+  PASS  warehouse has the six marts                                              {'mart_trip_summary': 26, 'mart_telemetry_quality': 2, 'mart_split_balance': 3, 'mart_speed_coverage': 7, 'mart_frame_gallery': 1019, 'mart_frame_funnel': 2}
+  PASS  warehouse gallery rows == gold frames                                    
+
+27/27 checks passed
+
+đã ghi /opt/lab/report/evidence/run_summary.json
+{"ok": true}

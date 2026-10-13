@@ -21,7 +21,17 @@
 ### Câu 1
 Liệt kê **ít nhất 4 khác biệt** giữa telemetry nguồn A và nguồn B mà bạn thấy ở bronze. Vì sao pipeline giữ **mỗi nguồn một bảng bronze** và để mọi cột ở dạng chữ, thay vì gộp và ép kiểu ngay?
 
-(trả lời ở đây)
+Từ hai dòng mẫu `step 1` in ra (đầu ra đầy đủ: `report/outputs/01_bronze.txt`):
+
+| | Nguồn A (`bronze.raw_telemetry_a`, 3021 dòng) | Nguồn B (`bronze.raw_telemetry_b`, 3234 dòng) |
+|---|---|---|
+| Tên cột | `ts_utc, speed_mps, heading_deg, lat, lon, alt_m, acc_x, acc_y, gas, brake, steer` | `timestamp_ms, spd_kmh, hdg, latitude, longitude, altitude, ax, ay, throttle_pct, brake_pct, steering` |
+| Đơn vị tốc độ | m/s (`1.213`) | km/h (`55.11`) |
+| Kiểu timestamp | chuỗi ISO UTC `2025-10-07T08:00:00.014Z` | epoch mili-giây `1759933801509` |
+| Bàn đạp | tỉ lệ 0..1 (`gas 0.028`) | phần trăm (`throttle_pct 2.0`) |
+| Đồng hồ | `telemetry_clock_offset_ms = 0` | `= 1500`: mẫu đầu `1759933801509` = 14:30:01.509, trong khi video B bắt đầu 14:30:00 |
+
+Ở bronze **mọi cột là VARCHAR**, kể cả 30 ô tốc độ trống ở mỗi nguồn (`speed_mps = ''` ở A, `spd_kmh = ''` ở B). Giữ mỗi nguồn một bảng và để dạng chữ vì bronze là **bản sao trung thực, chỉ thêm**: nếu ép kiểu/gộp ngay lúc nạp thì phải chọn sẵn một schema, một ô hỏng (`''`, chữ lạ) có thể làm hỏng cả lô hoặc bị ép thành 0, km/h có thể bị hiểu nhầm là m/s, và khi đó không còn bản gốc để chạy lại. Để ở dạng chữ thì lượt nạp không bao giờ mất dòng; quyết định kiểu, đơn vị, trừ độ lệch đồng hồ nằm ở silver (dbt), là mã có test và có thể chạy lại từ bronze khi luật thay đổi. Các cột `_source_file`, `_batch_id` (12 ký tự đầu sha256), `_row_no` giữ lineage tới tận dòng CSV. Nạp lặp không nhân đôi: lần hai báo `already present`, `cli history bronze.raw_telemetry_a` chỉ có **1 commit** (version 0, WRITE, 3021 dòng), `bronze.video_files` có 2 dòng (mỗi drive một, nhận diện bằng sha256).
 
 ## Bước 2 · Silver telemetry
 
