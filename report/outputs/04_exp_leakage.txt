@@ -1,0 +1,10 @@
+THÍ NGHIỆM 3 · Chia theo khung hình có làm rò rỉ không?
+
+Khung hình đáng dùng: 1019, thuộc 26 trip
+Chia THEO KHUNG HÌNH (ngẫu nhiên 70/15/15): 26 trip nằm ở nhiều hơn một split, 26 trip có khung ở cả train lẫn test
+Chia THEO TRIP (gold của pipeline): 0 trip bị chia cắt
+
+Vì sao quan trọng: các khung liền nhau gần như giống hệt; nếu một nửa nằm ở train và nửa kia ở test, mô hình 'đã thấy' đề thi.
+
+bằng chứng đã ghi: /opt/lab/report/evidence/leakage.json
+{"ok": true}

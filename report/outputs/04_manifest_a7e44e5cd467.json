@@ -1,0 +1,43 @@
+{
+  "dataset_version": "a7e44e5cd467",
+  "frames": 1019,
+  "by_split": {
+    "val": 144,
+    "test": 139,
+    "train": 736
+  },
+  "by_drive": {
+    "drive_a": 436,
+    "drive_b": 583
+  },
+  "trips_by_split": {
+    "val": 4,
+    "test": 4,
+    "train": 18
+  },
+  "manifest_sha256": "b31cc33fa2b564c627befcacd37c2c90233bcbe458a4ef45b4f982ebd2976a05",
+  "rules": {
+    "drop": [
+      "is_black",
+      "is_blurry",
+      "is_near_dup",
+      "not sync_ok"
+    ],
+    "split": "per trip, stratified by drive, md5 order"
+  },
+  "lineage": {
+    "bronze.raw_telemetry_a": 0,
+    "bronze.raw_telemetry_b": 0,
+    "bronze.trips_raw": 0,
+    "bronze.video_files": 1,
+    "silver.frames": 27,
+    "silver.telemetry": 0,
+    "silver.frames_flagged": 0,
+    "silver.frame_telemetry": 0,
+    "input_video_sha256": {
+      "drive_b": "bfa62703f645ff77a8578ae3fc74a00881140d38a404d43c8e2af265bbee9fdc",
+      "drive_a": "636ba1a98dfc5ba665d1c935e1d2064e69f4df360ff9ffbd15795957d5e7e9aa"
+    }
+  },
+  "created_at": "2026-10-13T02:58:16.479720+00:00"
+}

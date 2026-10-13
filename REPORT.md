@@ -11,8 +11,8 @@
 
 ## Kết quả cuối
 
-- `dataset_version` của bạn: `<điền>`  (phải khớp `report/evidence/run_summary.json`)
-- Số khung hình train / val / test của bạn: `<điền>`
+- `dataset_version` của bạn: `a7e44e5cd467`  (phải khớp `report/evidence/run_summary.json`)
+- Số khung hình train / val / test của bạn: **736 / 144 / 139** (tổng 1019; số trip 18 / 4 / 4)
 - `report/verify.txt`: tạo bằng `python3 scripts/check_submission.py --save-verify` (phải có `27/27 checks passed`).
 - Ảnh chụp trong `report/screenshots/`: `airflow_graph.png`, `minio_lake.png`, `metabase_dashboard.png`, và ảnh bài tập sập/chạy lại (log task đỏ thấy trip của bạn).
 
@@ -83,17 +83,32 @@ Khung hình **đen** và khung hình **tối** khác nhau thế nào, pipeline x
 ### Câu 6
 Dựa vào `leakage.json`: chia theo khung hình làm bao nhiêu trip bị chia cắt, so với chia theo trip? Vì sao điều này làm điểm kiểm thử đẹp một cách giả tạo?
 
-(trả lời ở đây)
+Theo `report/evidence/leakage.json`: có **1019** khung đáng dùng thuộc **26** trip. Chia ngẫu nhiên **theo khung hình** (70/15/15 theo `hash(frame_id)`): **26/26 trip** nằm ở nhiều hơn một split và **26/26 trip có khung ở cả train lẫn test**, tức là trip nào cũng rò rỉ. Chia **theo trip** (gold của pipeline): **0** trip bị chia cắt. Dbt test `no_straddle` và `verify` ("no trip is in two splits", 26 trips) cũng xác nhận điều này.
+
+Điểm kiểm thử sẽ đẹp giả tạo vì hai khung liền nhau chỉ cách 0,5 s: cùng con đường, cùng ánh sáng, cùng xe phía trước, và nhãn (tốc độ, góc lái) gần như bằng nhau. Bước khử trùng chỉ bỏ khung khác ≤ 2 bit dHash, nên những khung "gần giống" (trung vị 7 bit ở tốc độ cao) vẫn còn. Nếu một khung ở test có hàng xóm ngay bên cạnh nằm trong train, mô hình chỉ cần **nhớ cảnh** là đoán đúng, nên điểm test đo khả năng nhớ chứ không đo khả năng tổng quát hoá. Khi gặp một con đường mới thì độ chính xác tụt. Với split của tôi, test gồm các trip `trip-07774`, `trip-07900` (drive A) và `trip-03365`, `trip-09209` (drive B): mô hình không thấy bất kỳ khung nào của chúng khi train. Tuy vậy, các trip trong cùng một drive vẫn chung xe, chung ngày, chung thời tiết, nên muốn đánh giá chặt hơn thì nên giữ hẳn một drive/ngày/khu vực làm test.
 
 ### Câu 7
 Vì sao `dataset_version` là **băm nội dung** chứ không phải ngày giờ hay số đếm? Hai lần chạy liên tiếp cho kết quả gì? Vì sao `dataset_version` của bạn **khác** bạn bè dù cùng dữ liệu (liên hệ MSSV)?
 
-(trả lời ở đây)
+`export_dataset` tính `sha256` của các dòng `frame_id|split` (đã sắp theo `frame_id`) rồi lấy 12 ký tự đầu. Cùng nội dung (cùng tập khung, cùng cách chia) thì luôn ra cùng version, dù chạy lúc nào, trên máy nào, bao nhiêu lần; nội dung khác thì version khác. Vì vậy version vừa là tên vừa là bằng chứng: giảng viên chạy lại từ lake trống phải ra đúng chuỗi đó. Nếu dùng ngày giờ thì mỗi lần chạy lại một dataset y hệt cũng có tên mới (không biết hai lần có giống nhau không); số đếm thì phụ thuộc đã chạy bao nhiêu lần và đụng nhau giữa các máy.
+
+Kết quả của tôi: `step all --reset` lần đầu, `step 4`, rồi `cli export-dataset` lần nữa đều cho **`a7e44e5cd467`** (1019 khung: train 736 / val 144 / test 139; `manifest_sha256` `b31cc33f…`), và `export-dataset` không chép lại ảnh đã có. Version của tôi khác bạn bè vì `gold_dataset_frames` xếp trip trong mỗi drive theo `md5(trip_id || LAB_STUDENT_ID)`: MSSV đổi thì thứ tự đổi, trip rơi vào split khác, dòng `frame_id|split` khác, nên hash khác. Tôi đã thử chạy bước 4 với MSSV giả `2024000` (chỉ truyền `-e` cho một lệnh, không sửa `.env`): ra **`8fc131884584`**, train/val/test = **703/182/134**. Tập 1019 khung giữ nguyên (lọc chất lượng không phụ thuộc MSSV), số trip mỗi split vẫn 18/4/4 (mỗi drive 13 trip → 9/2/2), chỉ có việc trip nào vào split nào là đổi. Chạy lại bước 4 với `2A202603014` thì về đúng `a7e44e5cd467` (ảnh `report/screenshots/minio_gold_versions.png` thấy cả hai thư mục version). Một hạn chế: version chỉ băm `frame_id|split`, nên nếu nhãn (tốc độ đã join) đổi mà tập khung và split giữ nguyên thì version **không đổi**. Phần đó do `manifest_sha256` (băm toàn bộ `manifest.parquet`) phát hiện.
 
 ### Câu 8
 Đọc phần `lineage` trong `manifest.json` của dataset bạn. Trả lời "dataset này được tạo từ dữ liệu nào?" bằng chính nội dung đó. Nếu một người hỏi 3 tháng sau, thông tin nào giúp tái tạo lại đúng dataset này?
 
-(trả lời ở đây)
+`lake/gold/datasets/a7e44e5cd467/manifest.json` ở bước 4 (bản lưu: `report/outputs/04_manifest_a7e44e5cd467.json`):
+
+```json
+"lineage": {"bronze.raw_telemetry_a": 0, "bronze.raw_telemetry_b": 0, "bronze.trips_raw": 0, "bronze.video_files": 1,
+            "silver.frames": 27, "silver.telemetry": 0, "silver.frames_flagged": 0, "silver.frame_telemetry": 0,
+            "input_video_sha256": {"drive_a": "636ba1a98dfc…5795957d5e7e9aa", "drive_b": "bfa62703f645…c8e2af265bbee9fdc"}},
+"rules": {"drop": ["is_black","is_blurry","is_near_dup","not sync_ok"], "split": "per trip, stratified by drive, md5 order"}
+```
+
+Tức là: dataset `a7e44e5cd467` được tạo từ **hai video gốc** có đúng hai sha256 trên, telemetry bronze A/B và bảng trip ở **version 0** (nạp đúng một lần), `bronze.video_files` version 1 (2 commit, mỗi drive một), và `silver.frames` **version 27**. Con số 27 là 26 partition trip (v0–v25) cộng hai lần tôi chạy lại `trip-04871` trong thí nghiệm idempotency (v26, v27). Version vẫn là `a7e44e5cd467` dù `silver.frames` đã lên v27, đúng như mong đợi: lịch sử bảng dài hơn nhưng nội dung không đổi. Ở lượt chạy cuối từ lake trống, `silver.frames` là v25 (xem `run_summary.json`/manifest cuối) mà version vẫn giữ nguyên.
+
+Ba tháng sau, để tái tạo đúng dataset này cần: (1) hai file video khớp sha256 (`bronze/video/<drive>/raw.mp4`); (2) đọc các bảng Delta **as of** đúng các version trong `lineage` (time travel, với điều kiện chưa `VACUUM` các file cũ); (3) luật lọc/chia trong `rules` và `manifest_sha256` để so lại; (4) ảnh đã chép sẵn trong `gold/datasets/a7e44e5cd467/{train,val,test}/` cùng `manifest.parquet` (mỗi khung có `image_path`, `split`, nhãn). Manifest **chưa** ghi lại ba thứ cần thiết: giá trị ngưỡng trong `dbt_project.yml` (`dup_hamming=2`, `sync_tol_ms=150`, `split_train=0.70`…), commit git của mã pipeline/dbt, và muối `LAB_STUDENT_ID` (phải tra trong REPORT này: `2A202603014`). Tôi sẽ bổ sung ba trường đó nếu được sửa pipeline.
 
 ## Bước 5 · Điều phối và phục vụ
 

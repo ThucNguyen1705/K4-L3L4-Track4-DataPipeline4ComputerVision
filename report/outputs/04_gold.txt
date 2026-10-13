@@ -1,0 +1,81 @@
+
+==============================================================================
+Bước 4 · GOLD: dataset huấn luyện, chia theo trip, có phiên bản
+==============================================================================
+  dbt run (gold): PASS=2 WARN=0 ERROR=0 SKIP=0
+  dbt test (gồm test chống rò rỉ split): PASS=7 WARN=0 ERROR=0 SKIP=0
+  {"dataset_version": "a7e44e5cd467", "frames": 1019, "by_split": {"val": 144, "test": 139, "train": 736}, "trips_by_split": {"train": 18, "test": 4, "val": 4}}
+
+> Mỗi split có bao nhiêu khung hình và trip, ở từng drive
+drive_id  split  khung_hinh  trip  toc_do_tb_kmh
+--------  -----  ----------  ----  -------------
+drive_a   train  318         9     48.0         
+drive_a   val    70          2     21.0         
+drive_a   test   48          2     14.0         
+drive_b   train  418         9     72.0         
+drive_b   val    74          2     77.0         
+drive_b   test   91          2     59.0         
+
+MSSV dùng để chia split: 2A202603014
+CẦN THẤY: mỗi drive có đủ train, val, test; một trip chỉ nằm trong MỘT split; dataset_version là chuỗi 12 ký tự (đổi MSSV thì đổi version).
+
+--- Kiểm tra tự động của module 4 (verify --module 4) ---
+
+Module 4 · gold dataset
+  PASS  gold has frames in every split                                        1019 frames
+  PASS  no trip is in two splits (no leakage)                                 26 trips
+  PASS  every drive appears in train, val and test                            
+  PASS  gold contains no black / blurry / near-duplicate / out-of-sync frame  
+  PASS  one dataset_version, manifest.json agrees with the table              version a7e44e5cd467
+  PASS  manifest lists upstream table versions (lineage)                      
+  PASS  every manifest image exists under the dataset version folder          
+
+7/7 checks passed
+{"ok": true}
+
+$ scripts/lab.sh cli export-dataset (lần 2)
+{"dataset_version": "a7e44e5cd467", "frames": 1019, "by_split": {"val": 144, "test": 139, "train": 736}, "trips_by_split": {"val": 4, "test": 4, "train": 18}, "manifest_sha256": "b31cc33fa2b564c627befcacd37c2c90233bcbe458a4ef45b4f982ebd2976a05"}
+
+# trip -> split (MSSV 2A202603014)
+drive_id  split  trips                                   
+--------  -----  ----------------------------------------
+drive_a   train  trip-00003(46), trip-02086(32), trip-020
+drive_a   val    trip-07304(34), trip-09608(36)          
+drive_a   test   trip-07774(21), trip-07900(27)          
+drive_b   train  trip-00722(54), trip-01037(44), trip-042
+drive_b   val    trip-02689(19), trip-02736(55)          
+drive_b   test   trip-03365(54), trip-09209(37)          
+
+# Thử đổi MSSV rồi khôi phục
+$ docker compose exec -T -e LAB_STUDENT_ID=2024000 -w /opt/lab airflow python -m pipeline.cli step 4   (MSSV giả, chỉ cho lệnh này)
+
+==============================================================================
+Bước 4 · GOLD: dataset huấn luyện, chia theo trip, có phiên bản
+==============================================================================
+  dbt run (gold): PASS=2 WARN=0 ERROR=0 SKIP=0
+  dbt test (gồm test chống rò rỉ split): PASS=7 WARN=0 ERROR=0 SKIP=0
+  {"dataset_version": "8fc131884584", "frames": 1019, "by_split": {"val": 182, "test": 134, "train": 703}, "trips_by_split": {"test": 4, "train": 18, "val": 4}}
+
+> Mỗi split có bao nhiêu khung hình và trip, ở từng drive
+drive_id  split  khung_hinh  trip  toc_do_tb_kmh
+--------  -----  ----------  ----  -------------
+drive_a   train  301         9     43.0         
+drive_a   val    82          2     40.0         
+drive_a   test   53          2     22.0         
+drive_b   train  402         9     62.0         
+drive_b   val    100         2     90.0         
+drive_b   test   81          2     86.0         
+
+MSSV dùng để chia split: 2024000
+CẦN THẤY: mỗi drive có đủ train, val, test; một trip chỉ nằm trong MỘT split; dataset_version là chuỗi 12 ký tự (đổi MSSV thì đổi version).
+
+
+
+{"ok": true}
+
+$ scripts/lab.sh step 4   (khôi phục MSSV thật 2A202603014)
+  {"dataset_version": "a7e44e5cd467", "frames": 1019, "by_split": {"val": 144, "test": 139, "train": 736}, "trips_by_split": {"val": 4, "test": 4, "train": 18}}
+MSSV dùng để chia split: 2A202603014
+CẦN THẤY: mỗi drive có đủ train, val, test; một trip chỉ nằm trong MỘT split; dataset_version là chuỗi 12 ký tự (đổi MSSV thì đổi version).
+  PASS  one dataset_version, manifest.json agrees with the table              version a7e44e5cd467
+7/7 checks passed
