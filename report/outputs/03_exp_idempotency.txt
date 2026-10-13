@@ -1,0 +1,11 @@
+THÍ NGHIỆM 1 · Chạy lại partition trip-04871
+
+Cách của pipeline (Delta overwrite theo predicate trip_id):
+  trước : 1246 dòng, dấu vân tay 6c7480dfde7e
+  sau 2 lần chạy lại: 1246 dòng, dấu vân tay 6c7480dfde7e   -> KHÔNG ĐỔI
+
+Cách sai (append, chạy 2 lần, chỉ một trip): 120 dòng cho một trip có 60 khung -> NHÂN ĐÔI (2x)
+
+bằng chứng đã ghi: /opt/lab/report/evidence/idempotency.json
+{"ok": true}
+[{"version": 27, "operation": "WRITE", "rows_added": 60, "predicate": "trip_id = 'trip-04871'"}, {"version": 26, "operation": "WRITE", "rows_added": 60, "predicate": "trip_id = 'trip-04871'"}, {"version": 25, "operation": "WRITE", "rows_added": 41, "predicate": "trip_id = 'trip-09608'"}, {"version": 24, "operation": "WRITE", "rows_added": 37, "predicate": "trip_id = 'trip-09209'"}, {"version": 23, "operation": "WRITE", "rows_added": 60, "predicate": "trip_id = 'trip-08888'"}, {"version": 22, "operation": "WRITE", "rows_added": 60, "predicate": "trip_id = 'trip-08448'"}, {"version": 21, "operation": "WRITE", "rows_added": 30, "predicate": "trip_id = 'trip-07900'"}, {"version": 20, "operation": "WRITE", "rows_added": 34, "predicate": "trip_id = 'trip-07774'"}]

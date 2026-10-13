@@ -61,18 +61,22 @@ Thí nghiệm (`report/evidence/break_gate.json`): nới `max_speed_mps` từ 70
 ### Câu 4
 Dựa vào `idempotency.json`: số dòng trước và sau hai lần chạy lại, và khi ghi kiểu `append`. Vì sao Delta `overwrite` theo partition (một trip) an toàn hơn xoá rồi ghi lại, nhất là khi giữa chừng có lỗi?
 
-(trả lời ở đây)
+Tôi chạy `scripts/lab.sh exp idempotency --trip trip-04871` (chính trip dùng cho bài tập sập ở bước 5). Theo `report/evidence/idempotency.json`: trước **1246 dòng**, vân tay `6c7480dfde7e`; sau **hai lần** trích lại trip đó vẫn **1246 dòng**, vân tay `6c7480dfde7e` (`unchanged: true`). Kiểu ghi `append` hai lần cho cùng trip 60 khung ra **120 dòng** (nhân đôi 2x). `cli history silver.frames` cho thấy hai lần chạy lại tạo version **26** và **27**, mỗi version `WRITE` 60 dòng với `predicate: trip_id = 'trip-04871'`: bảng có thêm phiên bản nhưng nội dung cuối không đổi.
+
+`overwrite` với predicate là **một commit nguyên tử** trong `_delta_log`: cùng một giao dịch vừa đánh dấu xoá các file cũ của trip vừa thêm file mới. Người đọc chỉ thấy version cũ hoặc version mới, không bao giờ thấy trạng thái nửa vời. Nếu tiến trình chết giữa chừng (đã ghi nửa file parquet lên MinIO) thì chưa có commit, bảng vẫn ở version trước, file mồ côi bị bỏ qua; chạy lại là xong. Còn "xoá rồi ghi" là **hai** commit: chết sau bước xoá thì trip biến mất khỏi bảng (gold build lúc đó sẽ thiếu trip mà không ai biết), và nếu cơ chế thử lại không biết đã xoá hay chưa thì dễ ghi trùng. Overwrite theo partition cũng chỉ đụng đúng một trip, nên 25 trip còn lại không bị ảnh hưởng và có thể chạy lại riêng từng trip (đúng cách DAG chia 26 task).
 
 ### Câu 5
 Khung hình **đen** và khung hình **tối** khác nhau thế nào, pipeline xử lý khác nhau ra sao, bạn có đồng ý không? Dựa vào `threshold.json`: nếu chọn ngưỡng 0, 2, 6 thì bao nhiêu khung bị coi là trùng ở mỗi drive? Bạn chọn ngưỡng nào, vì sao, và ngưỡng đó phụ thuộc vào tốc độ xe thế nào?
 
 | dHash khác tối đa | số khung trùng, drive A | số khung trùng, drive B |
 |---|---|---|
-| 0 | | |
-| 2 | | |
-| 6 | | |
+| 0 | 61 / 602 | 8 / 644 |
+| 2 | 149 / 602 | 53 / 644 |
+| 6 | 363 / 602 | 244 / 644 |
 
-(trả lời ở đây)
+**Đen và tối.** Ở bước 3 (`report/outputs/03_silver_frames.txt`): drive A có 6 khung đen, B có 4; khung tối giữ lại: A 4, B **61**. Cả 10 khung đen có độ sáng **0.0** và độ nét **0.0**: không còn thông tin (camera/encoder mất hình), nên bị loại ở gold. 65 khung tối có độ sáng 12.8–39.6 (TB 31.2) nhưng độ nét TB **378.7**, nghĩa là cảnh vẫn có cạnh, có đường, có xe (ảnh `report/screenshots/silver_frames_examples.png`: `drive_b-01405` bóng râm, `drive_b-00997` trip-03365 có 25/60 khung tối). Pipeline chỉ gắn `is_dark` và **giữ**. Tôi đồng ý: đó là điều kiện lái thật (hầm, bóng cây), bỏ đi thì dataset lệch về cảnh sáng và mô hình hỏng đúng ở chỗ khó. Điểm tôi muốn sửa: luật "đen" chỉ dựa vào độ sáng < 12, nên một cảnh đêm thật rất tối cũng có thể bị coi là đen. Nên thêm điều kiện độ nét ≈ 0 (ở dữ liệu này khung đen đều có blur 0.0).
+
+**Ngưỡng trùng.** Tôi giữ ngưỡng **2**. Ngưỡng 0 chỉ bắt khung giống hệt từng bit (B chỉ 8), bỏ sót khung đứng hình có nhiễu nén; ngưỡng 2 bắt được camera đứng hình 6 s ở trip-04622 (`drive_a-02406…02466`, verify 11/12). Ngưỡng 6 loại **363/602 (60%)** khung A và 244/644 (38%) khung B, tức là loại cả những khung khác nhau thật. Ngưỡng phụ thuộc tốc độ: tôi đo thêm theo dải tốc độ, ở **0–10 km/h** có 50.9% khung trùng tại t2 (trung vị chỉ 2 bit khác), trong khi ở **50+ km/h** chỉ 13.7% (trung vị 7 bit). Xe chạy 65 km/h đi được khoảng 9 m giữa hai khung (0,5 s) nên khung khác nhau thật, nhưng t6 vẫn loại 48.7% số khung đó. Xe càng chậm thì càng nhiều khung thừa thật; xe nhanh thì nên dùng ngưỡng thấp hơn, hoặc tốt hơn là lấy mẫu theo **quãng đường** (mỗi N mét) thay vì theo thời gian.
 
 ## Bước 4 · Gold
 

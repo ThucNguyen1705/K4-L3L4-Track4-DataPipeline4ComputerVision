@@ -1,0 +1,137 @@
+
+==============================================================================
+Bước 3 · SILVER FRAMES: video thành khung hình, cờ chất lượng, join theo event time
+==============================================================================
+  đã xử lý 26 trip, tổng 1246 khung hình (mỗi trip một partition)
+  dbt run (trips + cờ + join): PASS=4 WARN=0 ERROR=0 SKIP=0
+  dbt test: PASS=8 WARN=0 ERROR=0 SKIP=0
+  {'silver.trips': {'rows': 26, 'version': 0}, 'silver.frames_flagged': {'rows': 1246, 'version': 0}, 'silver.frame_telemetry': {'rows': 1246, 'version': 0}}
+
+> Khung hình đi đâu (một khung có thể bị nhiều cờ)
+drive_id  tong  den  mo  toi_giu_lai  trung  mat_dong_bo
+--------  ----  ---  --  -----------  -----  -----------
+drive_a   602   6    9   4            149    7          
+drive_b   644   4    0   61           53     7          
+
+> Độ trễ đồng bộ giữa khung hình và telemetry (ms)
+drive_id  tb_ms  toi_da_ms
+--------  -----  ---------
+drive_a   66.0   2884     
+drive_b   73.0   3112     
+
+CẦN THẤY: drive A có 6 khung đen, drive B có 4; 'tối_giữ_lại' của B lớn (đường hầm, bóng râm): tối KHÔNG phải đen và không bị bỏ; khung trùng nhiều (xe chạy chậm, camera đứng hình 6 giây ở A); độ trễ đồng bộ trung bình nhỏ.
+
+--- Kiểm tra tự động của module 3 (verify --module 3) ---
+
+Module 3 · silver frames
+  PASS  frame_id unique                                   1246 frames
+  PASS  black frames detected (drive_a)                   6/6
+  PASS  black frames detected (drive_b)                   4/4
+  PASS  blurry frames detected (drive_a)                  8/8
+  PASS  frozen camera = near-duplicate frames (drive_a)   11/12
+  PASS  low-light frames flagged but not black (drive_b)  10/10
+
+6/6 checks passed
+{"ok": true}
+EXIT=0 took=142s
+
+$ scripts/lab.sh test
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 0.175s
+
+OK
+EXIT=0
+
+# Truy vấn thêm: độ sáng/độ nét theo loại khung, khung đen/mờ, trip có khung tối, sync_lost, khung trùng theo trip
+loai         n     sang_min  sang_tb  sang_max  net_tb
+-----------  ----  --------  -------  --------  ------
+binh_thuong  1162  40.1      96.4     141.0     714.9 
+den          10    0.0       0.0      0.0       0.0   
+mo           9     98.7      114.8    123.1     2.8   
+toi          65    12.8      31.2     39.6      378.7 
+usage: pipeline [-h]
+                {ingest,ingest-trips,list-trips,step,exp,extract-all,sql,reset,verify,idempotent,publish-lake,export-dataset,publish-warehouse,history,extract}
+                ...
+pipeline: error: unrecognized arguments: 40
+trip_id     frames  sync_lost  max_gap
+----------  ------  ---------  -------
+trip-03365  60      6          3112   
+trip-04868  60      6          2884   
+trip-05905  60      1          120    
+trip-09608  41      1          113    
+drive_id  trip_id     trung  tong  kmh_tb
+--------  ----------  -----  ----  ------
+drive_a   trip-04622  34     60    67.1  
+drive_a   trip-02086  28     60    17.6  
+drive_a   trip-08888  24     60    6.5   
+drive_b   trip-04871  17     60    58.3  
+drive_b   trip-08448  15     60    91.2  
+drive_a   trip-00003  14     60    63.2  
+drive_a   trip-07774  13     34    12.8  
+drive_a   trip-03904  11     22    46.1  
+frame_id       trip_id     sang   net  den    toi    mo     trung  sync_gap_ms  lighting
+-------------  ----------  -----  ---  -----  -----  -----  -----  -----------  --------
+drive_a-01001  trip-02097  0.0    0.0  True   False  False  False  18           Day     
+drive_a-01006  trip-02097  0.0    0.0  True   False  False  True   2            Day     
+drive_a-01011  trip-02097  0.0    0.0  True   False  False  True   101          Day     
+drive_a-01016  trip-02097  0.0    0.0  True   False  False  True   19           Day     
+drive_a-01021  trip-02097  0.0    0.0  True   False  False  True   6            Day     
+drive_a-01026  trip-02097  0.0    0.0  True   False  False  True   11           Day     
+drive_a-01998  trip-06570  117.8  2.5  False  False  True   False  16           Day     
+drive_a-02003  trip-06570  103.8  2.8  False  False  True   False  18           Day     
+drive_a-02008  trip-06570  98.7   3.2  False  False  True   False  8            Day     
+drive_a-02013  trip-06570  116.0  2.9  False  False  True   False  5            Day     
+drive_a-02018  trip-06570  121.1  2.7  False  False  True   False  104          Day     
+drive_a-02023  trip-06570  123.1  2.8  False  False  True   False  95           Day     
+drive_a-02028  trip-06570  121.1  2.7  False  False  True   False  86           Day     
+drive_a-02033  trip-06570  117.0  3.0  False  False  True   False  7            Day     
+drive_a-02038  trip-06570  114.4  2.8  False  False  True   False  111          Day     
+drive_b-00600  trip-02689  0.0    0.0  True   False  False  False  99           Day     
+drive_b-00605  trip-02689  0.0    0.0  True   False  False  True   17           Day     
+drive_b-00610  trip-02689  0.0    0.0  True   False  False  True   19           Day     
+drive_b-00615  trip-02689  0.0    0.0  True   False  False  True   107          Day     
+trip_id     lighting  toi  tong  sang_tb
+----------  --------  ---  ----  -------
+trip-03365  Day       25   60    41.2   
+trip-05297  Day       16   31    50.3   
+trip-04237  Day       10   60    86.7   
+trip-08448  Day       5    60    69.8   
+trip-05905  Day       4    60    90.4   
+trip-01037  Day       1    44    88.1   
+frame_id       frame_idx  is_near_dup  kmh 
+-------------  ---------  -----------  ----
+drive_a-02406  2406       True         65.4
+drive_a-02411  2411       True         65.4
+drive_a-02416  2416       True         65.3
+drive_a-02421  2421       True         65.0
+drive_a-02426  2426       True         64.6
+drive_a-02431  2431       True         64.3
+drive_a-02436  2436       True         63.9
+drive_a-02441  2441       True         63.3
+drive_a-02446  2446       True         62.9
+drive_a-02456  2456       True         63.4
+drive_a-02461  2461       True         63.4
+drive_a-02466  2466       True         63.7
+drive_a-02521  2521       True         65.9
+drive_a-02526  2526       True         66.3
+drive_a-02536  2536       True         66.8
+drive_a-02541  2541       True         67.0
+drive_a-02551  2551       True         67.7
+drive_a-02566  2566       True         68.3
+drive_a-02571  2571       True         68.5
+drive_a-02576  2576       True         68.5
+drive_a-02581  2581       True         68.5
+drive_a-02591  2591       True         68.1
+drive_a-02596  2596       True         68.2
+drive_a-02606  2606       True         68.3
+drive_a-02611  2611       True         68.4
+drive_a-02616  2616       True         68.6
+drive_a-02621  2621       True         68.6
+drive_a-02636  2636       True         69.2
+drive_a-02646  2646       True         70.3
+drive_a-02671  2671       True         71.1
+drive_a-02676  2676       True         70.7
+drive_a-02686  2686       True         70.6
+drive_a-02691  2691       True         70.7
+drive_a-02696  2696       True         70.2

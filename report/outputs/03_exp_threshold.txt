@@ -1,0 +1,20 @@
+THÍ NGHIỆM 4 · Độ nhạy của ngưỡng khung trùng (dHash, số bit được phép khác)
+
+drive_id  tong_khung  t0  t1   t2   t4   t6   t8 
+--------  ----------  --  ---  ---  ---  ---  ---
+drive_a   602         61  109  149  269  363  438
+drive_b   644         8   23   53   137  244  348
+
+Đọc: t2 là ngưỡng đang dùng. Ngưỡng cao thì loại nhiều khung hơn (có thể loại cả khung khác nhau thật), ngưỡng thấp thì giữ lại cả khung gần như trùng.
+
+bằng chứng đã ghi: /opt/lab/report/evidence/threshold.json
+{"ok": true}
+
+# Tỉ lệ khung trùng theo dải tốc độ (truy vấn thêm)
+kmh    khung  pct_t0  pct_t2  pct_t6  median_bit
+-----  -----  ------  ------  ------  ----------
+0-10   108    31.5    50.9    74.1    2.0       
+10-30  141    0.7     9.9     44.7    7.0       
+30-50  236    8.9     12.3    39.8    8.0       
+50+    759    1.7     13.7    48.7    7.0       
+null   2      0.0     0.0     0.0               
